@@ -29,7 +29,7 @@ def handle_client_request(client_socket, message_handler):
                 )
 
             if message[0] == message_protocol.external.MsgType.END_OF_RECODS:
-                serialized_message = message_handler.serialize_eof_message(message[1])
+                serialized_message = message_handler.serialize_eof_message(message[1])# BORRAR: al terminar envía []
                 output_queue.send(serialized_message)
                 message_protocol.external.send_msg(
                     client_socket, message_protocol.external.MsgType.ACK
@@ -63,9 +63,9 @@ def handle_client_response(client_list):
                     message_protocol.external.MsgType.FRUIT_TOP,
                     deserialized_message,
                 )
-                message_protocol.external.recv_msg(client_socket)
+                message_protocol.external.recv_msg(client_socket)# BORRAR: espera el ack de cliente revibió  top
                 break
-            client_list.pop(client_index)
+            client_list.pop(client_index)# borrar: elimina al cliente de la lista
             ack()
         except socket.error:
             logging.error("The connection with the server was lost")

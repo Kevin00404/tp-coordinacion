@@ -40,18 +40,18 @@ class Client:
             csv_reader = csv.reader(csvfile, delimiter=",", quotechar='"')
             for row in csv_reader:
                 [fruit, amount] = row
-                message_protocol.external.send_msg(
+                message_protocol.external.send_msg( 
                     self.server_socket,
                     message_protocol.external.MsgType.FRUIT_RECORD,
                     fruit,
                     int(amount),
                 )
-                message_protocol.external.recv_msg(self.server_socket)
+                message_protocol.external.recv_msg(self.server_socket) # BORRAR: envía una sola línea del csv y espera ack para pasar a la siguiente. 
 
         message_protocol.external.send_msg(
-            self.server_socket, message_protocol.external.MsgType.END_OF_RECODS
+            self.server_socket, message_protocol.external.MsgType.END_OF_RECODS # BORRAR: EOF 
         )
-        message_protocol.external.recv_msg(self.server_socket)
+        message_protocol.external.recv_msg(self.server_socket) # BORRAR: espera respuesta del join
 
     def recv_fruit_top(self, output_file):
         logging.info("Receiving fruit top")
