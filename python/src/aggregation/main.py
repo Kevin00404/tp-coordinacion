@@ -24,6 +24,7 @@ class AggregationFilter:
             MOM_HOST, OUTPUT_QUEUE
         )
         self.fruit_top = {}  # { id_client: [FruitItem, ...] }
+        self.eof_received = {}  # { id_client: cantidad de sum finalizados }
 
 
     def _process_data(self, id_client, fruit, amount):
@@ -36,12 +37,17 @@ class AggregationFilter:
         for i in range(len(client_top)):
             if client_top[i].fruit == fruit:
                 client_top[i] = client_top[i] + fruit_item.FruitItem(fruit, amount)
+                client_top.sort()
                 return
 
         bisect.insort(client_top, fruit_item.FruitItem(fruit, amount))
 
     def _process_eof(self, id_client):
         logging.info(f"Received EOF for client {id_client}")
+
+        self.eof_received[id_client] = self.eof_received.get(id_client, 0) + 1
+        if self.eof_received[id_client] < SUM_AMOUNT:
+            return
 
         client_top = self.fruit_top.pop(id_client, [])
 
@@ -56,6 +62,7 @@ class AggregationFilter:
         self.output_queue.send(
             message_protocol.internal.serialize([id_client] + fruit_top)
         )
+        del self.eof_received[id_client]
 
     def process_messsage(self, message, ack, nack):
         fields = message_protocol.internal.deserialize(message)
