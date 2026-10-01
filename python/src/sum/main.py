@@ -1,6 +1,7 @@
 import os
 import logging
 import threading
+import zlib
 
 from common import middleware, message_protocol, fruit_item
 
@@ -19,6 +20,12 @@ class SumFilter:
     def __init__(self):
         self.input_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, INPUT_QUEUE
+        )
+        self.sum_control_exchange = middleware.MessageMiddlewareExchangeRabbitMQ(
+            MOM_HOST, SUM_CONTROL_EXCHANGE, [SUM_PREFIX]
+        )
+        self.sum_control_output = middleware.MessageMiddlewareExchangeRabbitMQ(
+            MOM_HOST, SUM_CONTROL_EXCHANGE, [SUM_PREFIX]
         )
         self.data_output_exchanges = []
         for i in range(AGGREGATION_AMOUNT):
@@ -40,18 +47,23 @@ class SumFilter:
         ) + fruit_item.FruitItem(fruit, int(amount))
 
 
-    def _process_eof(self, id_client):# hasta llegar aca manda TODOS los mensajes que acumuló en dicc amount_by_fruit por el exhcange aggregation
+    def _process_eof(self, id_client):
+        self.sum_control_output.send(
+            message_protocol.internal.serialize([id_client])
+        )
+
+    def _send_partial_result(self, id_client):
         logging.info(f"Broadcasting data messages for client {id_client}")
 
         client_fruits = self.amount_by_fruit.pop(id_client, {})
 
         for fruit, final_fruit_item in client_fruits.items():
-            for data_output_exchange in self.data_output_exchanges:# TODO: ahora solo hay 1 exhange en variable de entorno. En los sig. scnearios cambia. TODO:esta bien que mande a todos ahora, solo esta enviando los 
-                data_output_exchange.send(
-                    message_protocol.internal.serialize(
-                        [id_client, fruit, final_fruit_item.amount]
-                    )
+            aggregation_id = zlib.crc32(fruit.encode("utf-8")) % AGGREGATION_AMOUNT
+            self.data_output_exchanges[aggregation_id].send(
+                message_protocol.internal.serialize(
+                    [id_client, fruit, final_fruit_item.amount]
                 )
+            )
 
         for data_output_exchange in self.data_output_exchanges:
             data_output_exchange.send(
@@ -67,8 +79,19 @@ class SumFilter:
             self._process_eof(fields[0])
         ack() 
 
+    def process_control_message(self, message, ack, nack):
+        fields = message_protocol.internal.deserialize(message)
+        self._send_partial_result(fields[0])
+        ack()
+
     def start(self):
-        self.input_queue.start_consuming(self.process_data_messsage)# 3. Se queda eternamente en el while true de rabbitMQ. TODO: poner un stop_consuming()
+        control_thread = threading.Thread(
+            target=self.sum_control_exchange.start_consuming,
+            args=(self.process_control_message,),
+            daemon=True,
+        )
+        control_thread.start()
+        self.input_queue.start_consuming(self.process_data_messsage)# TODO: stop consuming()
 
 def main():
     logging.basicConfig(level=logging.INFO)
