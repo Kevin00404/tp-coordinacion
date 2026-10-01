@@ -1,6 +1,7 @@
 import bisect
 import logging
 import os
+import signal
 from common import fruit_item, message_protocol, middleware
 
 
@@ -23,7 +24,21 @@ class AggregationFilter:
         self.output_queue = middleware.MessageMiddlewareQueueRabbitMQ(
             MOM_HOST, OUTPUT_QUEUE
         )
-        self.fruit_top = {}  # { id_client: [FruitItem, ...] }
+        self.fruit_top = {} 
+        self.eof_received = {}  
+
+    def stop(self):
+        logging.info("Stopping AggregationFilter")
+        try:
+            self.input_exchange.stop_consuming()
+        except Exception as exc:
+            logging.warning("Failed to stop Aggregation input exchange: %s", exc)
+
+        try:
+            self.input_exchange.close()
+            self.output_queue.close()
+        except Exception as exc:
+            logging.warning("Failed to close Aggregation middleware: %s", exc)
 
 
     def _process_data(self, id_client, fruit, amount):
@@ -36,12 +51,17 @@ class AggregationFilter:
         for i in range(len(client_top)):
             if client_top[i].fruit == fruit:
                 client_top[i] = client_top[i] + fruit_item.FruitItem(fruit, amount)
+                client_top.sort()
                 return
 
         bisect.insort(client_top, fruit_item.FruitItem(fruit, amount))
 
     def _process_eof(self, id_client):
         logging.info(f"Received EOF for client {id_client}")
+
+        self.eof_received[id_client] = self.eof_received.get(id_client, 0) + 1
+        if self.eof_received[id_client] < SUM_AMOUNT:
+            return
 
         client_top = self.fruit_top.pop(id_client, [])
 
@@ -56,6 +76,7 @@ class AggregationFilter:
         self.output_queue.send(
             message_protocol.internal.serialize([id_client] + fruit_top)
         )
+        del self.eof_received[id_client]
 
     def process_messsage(self, message, ack, nack):
         fields = message_protocol.internal.deserialize(message)
@@ -71,7 +92,12 @@ class AggregationFilter:
 
 
     def start(self):
+        signal.signal(
+            signal.SIGTERM,
+            lambda signum, frame: self.stop(),
+        )
         self.input_exchange.start_consuming(self.process_messsage)
+
 
 def main():
     logging.basicConfig(level=logging.INFO)
