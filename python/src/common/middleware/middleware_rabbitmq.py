@@ -7,6 +7,8 @@ from .middleware import (
     MessageMiddlewareMessageError
 )
 
+PREFETCH_COUNT=20
+
 class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
 
     def __init__(self, host, queue_name):
@@ -16,7 +18,7 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
         self._queue_name = queue_name
         self._channel.queue_declare(queue=self._queue_name)
 
-        self._channel.basic_qos(prefetch_count=1)
+        self._channel.basic_qos(prefetch_count=PREFETCH_COUNT)
         self._consuming = False
 
     def start_consuming(self, on_message_callback): 
@@ -37,7 +39,7 @@ class MessageMiddlewareQueueRabbitMQ(MessageMiddlewareQueue):
             )
 
             self._consuming = True
-            self._channel.start_consuming()# BORRAR: queda dentro del while true de rabbitmq
+            self._channel.start_consuming()
 
         except pika.exceptions.AMQPConnectionError as err:
             raise MessageMiddlewareDisconnectedError(str(err)) from err
@@ -103,7 +105,7 @@ class MessageMiddlewareExchangeRabbitMQ(MessageMiddlewareExchange):
         self._consuming = False
         
         self._channel.exchange_declare(exchange=self._exchange_name, exchange_type='topic')
-        self._channel.basic_qos(prefetch_count=1)
+        self._channel.basic_qos(prefetch_count=PREFETCH_COUNT)
 
 
     def start_consuming(self, on_message_callback):
